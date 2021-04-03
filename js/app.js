@@ -13,15 +13,41 @@ class GameObject {
   draw(ctx){
       ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
   }
+
+  rectFromGameObject() {
+    return {
+      top: this.y,
+      left: this.x,
+      bottom: this.y + this.height,
+      right: this.x + this.width
+    }
+  }
 }
 
 class Hero extends GameObject {
   constructor(x, y){
       super(x,y);
+      (this.width = 99), (this.height = 75);
       this.type = "Hero";
-      this.speed = 0;
+      this.speed = { x: 0, y: 0 };
+      this.cooldown = 0;
   }
-}
+  fire() {
+    gameObjects.push(new Laser(this.x + 45, this.y - 10));
+    this.cooldown = 500;
+ 
+    let id = setInterval(() => {
+      if (this.cooldown > 0) {
+        this.cooldown -= 100;
+      } else {
+        clearInterval(id);
+      }
+    }, 200);
+  }
+  canFire() {
+    return this.cooldown === 0;
+  }
+ }
 
 class Enemy extends GameObject {
   constructor (x,y){
@@ -38,6 +64,32 @@ class Enemy extends GameObject {
           }
       }
       ,300)
+  }
+}
+
+class LaserExplosion extends GameObject {
+  constructor(x,y) {
+    super(x,y);
+    (this.width = 98), (this.height = 70);
+    this.type = 'LaserExplosion';
+    this.img = laserExplosionImg;
+  }
+}
+
+class Laser extends GameObject {
+  constructor(x, y) {
+    super(x,y);
+    (this.width = 9), (this.height = 33);
+    this.type = 'Laser';
+    this.img = laserImg;
+    let id = setInterval(() => {
+      if (this.y > 0) {
+        this.y -= 15;
+      } else {
+        this.dead = true;
+        clearInterval(id);
+      }
+    }, 100)
   }
 }
 
@@ -67,18 +119,23 @@ const Messages = {
   KEY_EVENT_DOWN: "KEY_EVENT_DOWN",
   KEY_EVENT_LEFT: "KEY_EVENT_LEFT",
   KEY_EVENT_RIGHT: "KEY_EVENT_RIGHT",
+  KEY_EVENT_SPACE: "KEY_EVENT_SPACE",
+  COLLISION_ENEMY_LASER: "COLLISION_ENEMY_LASER",
+  COLLISION_ENEMY_HERO: "COLLISION_ENEMY_HERO",
 };
 
 //Variables
 let heroImg, 
     enemyImg, 
     laserImg,
+    laserExplosionImg,
     canvas, ctx, 
     gameObjects = [], 
     hero, 
     eventEmitter = new EventEmitter();
 
 //Functions
+//using a promise, load the relevant image into the game
 function loadTexture(path) {
     return new Promise((resolve) => {
       const img = new Image()
@@ -90,7 +147,6 @@ function loadTexture(path) {
   }
   
   function createEnemies() {
-    // TODO draw enemies
     const MONSTER_TOTAL = 5;
     const MONSTER_WIDTH = MONSTER_TOTAL * 98;
     const START_X = (canvas.width - MONSTER_WIDTH) / 2;
@@ -111,37 +167,83 @@ function loadTexture(path) {
       canvas.height - canvas.height / 4
     );
     hero.img = heroImg;
-    hero.height = 50;
-    hero.width =50;
     gameObjects.push(hero);
   }
 
+  //look at both enemy and laser objects and based on collision remove them from the game "dead"
+  function updateGameObjects() {
+    const enemies = gameObjects.filter(go => go.type === 'Enemy');
+    const lasers = gameObjects.filter((go) => go.type === "Laser");
+  // laser hit something
+    lasers.forEach((l) => {
+      enemies.forEach((m) => {
+        if (intersectRect(l.rectFromGameObject(), m.rectFromGameObject())) {
+        eventEmitter.emit(Messages.COLLISION_ENEMY_LASER, {
+          first: l,
+          second: m,
+        });
+      }
+     });
+  }); 
+   
+    gameObjects = gameObjects.filter(go => !go.dead);
+    //mark explosions as dead
+     gameObjects.forEach((go) => {
+       if(go.type === 'LaserExplosion'){
+         go.dead = true;
+       }
+     })
+  }
+
+  //Intial the full game state, creating hero/enemies and registering events to emit
   function initGame() {
     gameObjects = [];
-    //createEnemies();
+    createEnemies();
     createHero();
 
     //Handle published messages on key commands
     eventEmitter.on(Messages.KEY_EVENT_UP, () => {
-      hero.y -=5 ;
+      hero.y -=15 ;
     })
   
     eventEmitter.on(Messages.KEY_EVENT_DOWN, () => {
-      hero.y += 5;
+      hero.y += 15;
     });
   
     eventEmitter.on(Messages.KEY_EVENT_LEFT, () => {
-      hero.x -= 5;
+      hero.x -= 15;
     });
   
     eventEmitter.on(Messages.KEY_EVENT_RIGHT, () => {
-      hero.x += 5;
+      hero.x += 15;
     });
+
+    eventEmitter.on(Messages.KEY_EVENT_SPACE, () => {
+      if (hero.canFire()) {
+        hero.fire();
+      }
+    });
+
+    eventEmitter.on(Messages.COLLISION_ENEMY_LASER, (_, { first, second }) => {
+      first.dead = true;
+      second.dead = true;
+      gameObjects.push(new LaserExplosion(second.x , second.y))
+    })
 
   }
 
+  //Draw each game object on the canvas
+  //Calling the GameObject draw function
   function drawGameObjects(ctx) {
     gameObjects.forEach(go => go.draw(ctx));
+  }
+
+  //Function takes two rectangles and returns true/false, based on any intersection
+  function intersectRect(r1, r2) {
+    return !(r2.left > r1.right ||
+      r2.right < r1.left ||
+      r2.top > r1.bottom ||
+      r2.bottom < r1.top);
   }
 
 //On Window Load (start?)
@@ -151,6 +253,7 @@ function loadTexture(path) {
     heroImg = await loadTexture('./assets/player.png');
     enemyImg = await loadTexture('./assets/enemyShip.png');
     laserImg = await loadTexture('./assets/laserRed.png');
+    laserExplosionImg = await loadTexture('./assets/laserRedShot.png');
     
     //Initialise the game
     initGame();
@@ -159,6 +262,7 @@ function loadTexture(path) {
         ctx.clearRect(0,0,canvas.width, canvas.height);
         ctx.fillstyle = 'black'
         ctx.fillRect(0,0,canvas.width, canvas.height);
+        updateGameObjects();
         drawGameObjects(ctx);
       },100)
   }
@@ -181,6 +285,8 @@ function loadTexture(path) {
 
   window.addEventListener("keydown", onKeyDown);
 
+  //Keyup listners to all controls
+  //ToDo: Refactor to handle "held" direction key
   window.addEventListener("keyup", (evt) => {
     if (evt.key === "ArrowUp") {
       eventEmitter.emit(Messages.KEY_EVENT_UP);
@@ -190,5 +296,7 @@ function loadTexture(path) {
       eventEmitter.emit(Messages.KEY_EVENT_LEFT);
     } else if (evt.key === "ArrowRight") {
       eventEmitter.emit(Messages.KEY_EVENT_RIGHT);
+    } else if(evt.key === " ") { //Space bar 
+     eventEmitter.emit(Messages.KEY_EVENT_SPACE);
     }
   });
