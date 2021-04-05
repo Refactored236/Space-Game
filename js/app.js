@@ -129,10 +129,14 @@ let heroImg,
     enemyImg, 
     laserImg,
     laserExplosionImg,
-    canvas, ctx, 
+    lifeImg,
+    canvas, 
+    ctx, 
     gameObjects = [], 
     hero, 
-    eventEmitter = new EventEmitter();
+    eventEmitter = new EventEmitter(),
+    score = 0,
+    livesRemaining = 3;
 
 //Functions
 //using a promise, load the relevant image into the game
@@ -195,7 +199,14 @@ function loadTexture(path) {
      })
   }
 
-  //Intial the full game state, creating hero/enemies and registering events to emit
+  function printScore(message) {
+    ctx.font = '40px Arial';
+    ctx.strokeStyle = `rgb(210,39,48)`;
+    ctx.textAlign = 'right';
+    ctx.strokeText(message, canvas.width - 90, canvas.height - 30);
+  }
+
+  //Intial the full game state, creating hero/enemies and registering events to em it
   function initGame() {
     gameObjects = [];
     createEnemies();
@@ -227,7 +238,10 @@ function loadTexture(path) {
     eventEmitter.on(Messages.COLLISION_ENEMY_LASER, (_, { first, second }) => {
       first.dead = true;
       second.dead = true;
+      //explode the ship
       gameObjects.push(new LaserExplosion(second.x , second.y))
+      //increment score
+      score += 100; 
     })
 
   }
@@ -254,16 +268,20 @@ function loadTexture(path) {
     enemyImg = await loadTexture('./assets/enemyShip.png');
     laserImg = await loadTexture('./assets/laserRed.png');
     laserExplosionImg = await loadTexture('./assets/laserRedShot.png');
+    lifeImg = await loadTexture('./assets/life.png');
     
     //Initialise the game
     initGame();
-
+   // printScore(); 
     let gameLoopId = setInterval(() => {
+         
         ctx.clearRect(0,0,canvas.width, canvas.height);
-        ctx.fillstyle = 'black'
+        ctx.fillStyle = 'black'
         ctx.fillRect(0,0,canvas.width, canvas.height);
+        printScore('Score: ' + score);
         updateGameObjects();
         drawGameObjects(ctx);
+        
       },100)
   }
   
