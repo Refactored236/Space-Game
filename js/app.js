@@ -31,10 +31,11 @@ class Hero extends GameObject {
       this.type = "Hero";
       this.speed = { x: 0, y: 0 };
       this.cooldown = 0;
+      this.livesRemaining = 3;
   }
   fire() {
     gameObjects.push(new Laser(this.x + 45, this.y - 10));
-    this.cooldown = 500;
+    this.cooldown = 400;
  
     let id = setInterval(() => {
       if (this.cooldown > 0) {
@@ -63,7 +64,7 @@ class Enemy extends GameObject {
               clearInterval(id);
           }
       }
-      ,300)
+      ,500)
   }
 }
 
@@ -111,6 +112,10 @@ class EventEmitter {
     }
   }
 
+  clear() {
+    this.listeners = {};
+  }
+
 }
 
 //Constants
@@ -120,8 +125,11 @@ const Messages = {
   KEY_EVENT_LEFT: "KEY_EVENT_LEFT",
   KEY_EVENT_RIGHT: "KEY_EVENT_RIGHT",
   KEY_EVENT_SPACE: "KEY_EVENT_SPACE",
+  KEY_EVENT_ENTER: "KEY_EVENT_ENTER",
   COLLISION_ENEMY_LASER: "COLLISION_ENEMY_LASER",
   COLLISION_ENEMY_HERO: "COLLISION_ENEMY_HERO",
+  GAME_END_WIN: "GAME_END_WIN",
+  GAME_END_LOSS: "GAME_END_LOSS",
 };
 
 //Variables
@@ -136,7 +144,7 @@ let heroImg,
     hero, 
     eventEmitter = new EventEmitter(),
     score = 0,
-    livesRemaining = 3;
+    gameLoopId;
 
 //Functions
 //using a promise, load the relevant image into the game
@@ -157,7 +165,7 @@ function loadTexture(path) {
     const STOP_X = START_X + MONSTER_WIDTH;
 
     for (let x = START_X; x < STOP_X; x += 98) {
-      for (let y = 0; y < 50 * 5; y += 50) {
+      for (let y = 0; y < 40 * 5; y += 50) {
         const enemy = new Enemy(x, y);
         enemy.img = enemyImg;
         gameObjects.push(enemy);
@@ -219,7 +227,7 @@ function loadTexture(path) {
   function drawLife() {
     //start drawing life image in 180 from side
     const START_POS = canvas.width - 180;
-    for(let i=0; i < livesRemaining; i++){
+    for(let i=0; i < hero.livesRemaining; i++){
       ctx.drawImage(
         lifeImg, 
         //For each image shift position
@@ -229,20 +237,30 @@ function loadTexture(path) {
     }
   }
 
-  function displayMessage(message, color = `rgb(210,39,48)`){
+  function displayMessage(message, color = 'rgb(210,39,48)'){
     ctx.font = '40px Arial';
     ctx.strokeStyle = color;
     ctx.textAlign = 'center';
-    console.log(message);
-    ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+    //console.log(message);
+    ctx.strokeText(message, canvas.width / 2, canvas.height / 2);
   }
 
   function decrementLife() {
-    livesRemaining--;
-    if (livesRemaining === 0) {
+    hero.livesRemaining--;
+    if (hero.livesRemaining === 0) {
       //Game over
       hero.dead = true;
     }
+  }
+
+  //End condition Checks
+  function isHeroDead() {
+    return hero.livesRemaining <= 0;
+  }
+
+  function allEnemiesDead() {
+    const enemies = gameObjects.filter((go) => go.type === "Enemy" && !go.dead);
+    return enemies.length === 0;
   }
 
   //Intial the full game state, creating hero/enemies and registering events to em it
@@ -250,7 +268,7 @@ function loadTexture(path) {
     gameObjects = [];
     createEnemies();
     createHero();
-
+    score = 0;
     //Handle published messages on key commands
     eventEmitter.on(Messages.KEY_EVENT_UP, () => {
       hero.y -=15 ;
@@ -282,6 +300,10 @@ function loadTexture(path) {
       gameObjects.push(new LaserExplosion(second.x , second.y))
       //increment score
       score += 100; 
+
+      if (allEnemiesDead()) {
+        eventEmitter.emit(Messages.GAME_END_WIN);
+      }
     });
     
     //Handle Enemy/Hero Collision
@@ -291,9 +313,68 @@ function loadTexture(path) {
       enemy.dead = true;
       //lose a life
       decrementLife();
-      //gameObjects.push(new LaserExplosion(hero.x , hero.y))
+
+      if (isHeroDead())  {
+        eventEmitter.emit(Messages.GAME_END_LOSS);
+        return; // loss before victory
+        //Check if that was the end of the enemies
+      } else if (allEnemiesDead()) {
+        eventEmitter.emit(Messages.GAME_END_WIN);
+      }
     }
     );
+
+    eventEmitter.on(Messages.GAME_END_WIN, () => {
+      endGame(true);
+    });
+    
+    eventEmitter.on(Messages.GAME_END_LOSS, () => {
+      endGame(false);
+    });
+
+    eventEmitter.on(Messages.KEY_EVENT_ENTER, () => {
+      resetGame();
+    })
+
+  }
+
+  //handle end state of game
+  function endGame(success){
+    clearInterval(gameLoopId);
+
+    //delay slightly to handle and draws in progress
+    setTimeout(() => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (success) {
+          displayMessage(
+            "Victory!!! - Press [Enter] to start a new game",
+            "green"
+          );
+        } else {
+          displayMessage(
+            "You died !!! Press [Enter] to start a new game");
+        }
+      },200)
+  }
+
+  //handle reset of the game
+  function resetGame() {
+    if(gameLoopId){
+      clearInterval(gameLoopId);
+      eventEmitter.clear();
+      initGame();
+      gameLoopId = setInterval(() => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        printScore('Score: ' + score);
+        updateGameObjects();
+        drawLife();
+        drawGameObjects(ctx);
+      }, 100);
+    }
   }
 
   //Draw each game object on the canvas
@@ -310,10 +391,11 @@ function loadTexture(path) {
       r2.bottom < r1.top);
   }
 
-//On Window Load (start?)
+//On Window Load (start)
   window.onload = async () => {
     canvas = document.getElementById('canvas')
     ctx = canvas.getContext('2d')
+    //Load core assets
     heroImg = await loadTexture('./assets/player.png');
     enemyImg = await loadTexture('./assets/enemyShip.png');
     laserImg = await loadTexture('./assets/laserRed.png');
@@ -322,8 +404,7 @@ function loadTexture(path) {
     
     //Initialise the game
     initGame();
-   // printScore(); 
-    let gameLoopId = setInterval(() => {
+    gameLoopId = setInterval(() => {
          
         ctx.clearRect(0,0,canvas.width, canvas.height);
         ctx.fillStyle = 'black'
@@ -367,5 +448,8 @@ function loadTexture(path) {
       eventEmitter.emit(Messages.KEY_EVENT_RIGHT);
     } else if(evt.key === " ") { //Space bar 
      eventEmitter.emit(Messages.KEY_EVENT_SPACE);
+    }
+    else if(evt.key === "Enter") {
+      eventEmitter.emit(Messages.KEY_EVENT_ENTER);
     }
   });
