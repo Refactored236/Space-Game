@@ -189,6 +189,15 @@ function loadTexture(path) {
       }
      });
   }); 
+
+  //Enemy contact
+  enemies.forEach(enemy => {
+    let heroRect =  hero.rectFromGameObject();
+    if (intersectRect(heroRect, enemy.rectFromGameObject())){
+        eventEmitter.emit(Messages.COLLISION_ENEMY_HERO, {enemy});
+        heroRect = 0;
+    }
+  })
    
     gameObjects = gameObjects.filter(go => !go.dead);
     //mark explosions as dead
@@ -199,11 +208,41 @@ function loadTexture(path) {
      })
   }
 
+  //function to add score details to the screen at bottom right
   function printScore(message) {
     ctx.font = '40px Arial';
     ctx.strokeStyle = `rgb(210,39,48)`;
-    ctx.textAlign = 'right';
-    ctx.strokeText(message, canvas.width - 90, canvas.height - 30);
+    ctx.textAlign = 'left';
+    ctx.strokeText(message, 10, canvas.height - 50);
+  }
+
+  function drawLife() {
+    //start drawing life image in 180 from side
+    const START_POS = canvas.width - 180;
+    for(let i=0; i < livesRemaining; i++){
+      ctx.drawImage(
+        lifeImg, 
+        //For each image shift position
+        START_POS + (45 * (i+1)),
+        canvas.height - 80
+        );
+    }
+  }
+
+  function displayMessage(message, color = `rgb(210,39,48)`){
+    ctx.font = '40px Arial';
+    ctx.strokeStyle = color;
+    ctx.textAlign = 'center';
+    console.log(message);
+    ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+  }
+
+  function decrementLife() {
+    livesRemaining--;
+    if (livesRemaining === 0) {
+      //Game over
+      hero.dead = true;
+    }
   }
 
   //Intial the full game state, creating hero/enemies and registering events to em it
@@ -235,6 +274,7 @@ function loadTexture(path) {
       }
     });
 
+    //Handle Laser/Enemy Collision
     eventEmitter.on(Messages.COLLISION_ENEMY_LASER, (_, { first, second }) => {
       first.dead = true;
       second.dead = true;
@@ -242,8 +282,18 @@ function loadTexture(path) {
       gameObjects.push(new LaserExplosion(second.x , second.y))
       //increment score
       score += 100; 
-    })
-
+    });
+    
+    //Handle Enemy/Hero Collision
+    eventEmitter.on(Messages.COLLISION_ENEMY_HERO, (_, {enemy}) => {
+      console.log(enemy);
+      //destroys the enemy
+      enemy.dead = true;
+      //lose a life
+      decrementLife();
+      //gameObjects.push(new LaserExplosion(hero.x , hero.y))
+    }
+    );
   }
 
   //Draw each game object on the canvas
@@ -280,6 +330,7 @@ function loadTexture(path) {
         ctx.fillRect(0,0,canvas.width, canvas.height);
         printScore('Score: ' + score);
         updateGameObjects();
+        drawLife();
         drawGameObjects(ctx);
         
       },100)
