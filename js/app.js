@@ -437,7 +437,8 @@ function loadTexture(path) {
 
   //Keyup listners to all controls
   //ToDo: Refactor to handle "held" direction key
-  window.addEventListener("keyup", (evt) => {
+  //On ToDo: Currently altered to keydown to handle consistent move
+  window.addEventListener("keydown", (evt) => {
     if (evt.key === "ArrowUp") {
       eventEmitter.emit(Messages.KEY_EVENT_UP);
     } else if (evt.key === "ArrowDown") {
